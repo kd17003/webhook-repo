@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Events Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .events-container {
+            padding: 30px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .event-item {
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            border-radius: 8px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .event-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .event-text {
+            font-size: 16px;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .event-author {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .event-branch {
+            font-weight: 600;
+            color: #764ba2;
+        }
+
+        .event-timestamp {
+            color: #666;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4caf50;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>GitHub Events Monitor</h1>
+            <p><span class="status-indicator"></span>Polling every 15 seconds</p>
+        </div>
+        <div class="events-container" id="eventsContainer">
+            <div class="loading">Loading events...</div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api/events';
+        const POLL_INTERVAL = 15000; // 15 seconds
+
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            const options = {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+                timeZone: 'UTC',
+                timeZoneName: 'short'
+            };
+            return date.toLocaleString('en-US', options);
+        }
+
+        function formatEvent(event) {
+            const author = event.author;
+            const timestamp = formatTimestamp(event.timestamp);
+
+            let text = '';
+            if (event.action === 'PUSH') {
+                text = `<span class="event-author">${author}</span> pushed to <span class="event-branch">${event.to_branch}</span>`;
+            } else if (event.action === 'PULL_REQUEST') {
+                text = `<span class="event-author">${author}</span> submitted a pull request from <span class="event-branch">${event.from_branch}</span> to <span class="event-branch">${event.to_branch}</span>`;
+            } else if (event.action === 'MERGE') {
+                text = `<span class="event-author">${author}</span> merged branch <span class="event-branch">${event.from_branch}</span> to <span class="event-branch">${event.to_branch}</span>`;
+            }
+
+            return `
+                <div class="event-item">
+                    <div class="event-text">${text}</div>
+                    <div class="event-timestamp">on ${timestamp}</div>
+                </div>
+            `;
+        }
+
+        async function fetchEvents() {
+            try {
+                const response = await fetch(API_URL);
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('API Error:', errorData);
+                    document.getElementById('eventsContainer').innerHTML =
+                        '<div class="empty-state">Error loading events: ' + (errorData.message || 'Unknown error') + '</div>';
+                    return;
+                }
+
+                const events = await response.json();
+
+                // Ensure events is an array
+                if (!Array.isArray(events)) {
+                    console.error('Invalid response format:', events);
+                    document.getElementById('eventsContainer').innerHTML =
+                        '<div class="empty-state">Invalid response from server</div>';
+                    return;
+                }
+
+                displayEvents(events);
+            } catch (error) {
+                console.error('Error fetching events:', error);
+                document.getElementById('eventsContainer').innerHTML =
+                    '<div class="empty-state">Error loading events. Please refresh the page.</div>';
+            }
+        }
+
+        function displayEvents(events) {
+            const container = document.getElementById('eventsContainer');
+
+            if (!events || events.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p>No events yet. Make some changes to your repository!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = events.map(formatEvent).join('');
+        }
+
+        // Initial fetch
+        fetchEvents();
+
+        // Poll every 15 seconds
+        setInterval(fetchEvents, POLL_INTERVAL);
+    </script>
+</body>
+
+</html>
